@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SF Opportunity Parcel Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--ink:#18201f;--muted:#66716f;--line:#d9dfdc;--panel:#fff;--bg:#f3f5f2;--accent:#183f36}
+*{box-sizing:border-box} body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink)}
+.app{display:grid;grid-template-columns:310px 1fr;min-height:760px;max-width:1400px;margin:auto;background:var(--panel)}
+.sidebar{border-right:1px solid var(--line);padding:22px;overflow:auto;max-height:900px}
+h1{font-size:22px;line-height:1.05;margin:0 0 8px}.sub{font-size:12px;color:var(--muted);line-height:1.45;margin-bottom:18px}
+.section{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
+.label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+.weights{display:grid;gap:10px}.w{display:grid;grid-template-columns:1fr 46px;gap:8px;align-items:center;font-size:12px}.w input{width:100%}.w span{text-align:right;font-weight:700}
+.legend{display:grid;gap:7px;font-size:12px}.leg{display:flex;gap:8px;align-items:center}.dot{width:12px;height:12px;border-radius:50%}
+.mapwrap{position:relative;min-width:0}.map{height:760px;min-height:620px}.topbar{position:absolute;z-index:1000;top:14px;left:14px;right:14px;display:flex;gap:8px;align-items:center;pointer-events:none}.pill{pointer-events:auto;background:rgba(255,255,255,.95);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+button{border:1px solid var(--line);background:white;border-radius:8px;padding:9px 11px;font-weight:650;cursor:pointer}button:hover{background:#f4f6f4}
+#status{margin-top:10px;font-size:11px;color:var(--muted);line-height:1.4}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px;margin-top:12px}.score{font-size:34px;font-weight:800;line-height:1}.score small{font-size:12px;font-weight:600;color:var(--muted)}
+.metric{display:flex;justify-content:space-between;font-size:12px;margin-top:7px}.bar{height:5px;background:#e8ece9;border-radius:4px;overflow:hidden;margin-top:3px}.fill{height:100%}
+.note{font-size:10px;color:var(--muted);line-height:1.45}
+@media(max-width:800px){.app{grid-template-columns:1fr}.sidebar{max-height:none;border-right:0;border-bottom:1px solid var(--line)}.map{height:650px}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="sidebar">
+<h1>SF Opportunity Map</h1>
+<div class="sub">A parcel-screening prototype that ranks development opportunity using transit access, parcel characteristics and neighborhood context.</div>
+
+<div class="section">
+<div class="label">Opportunity threshold</div>
+<select id="threshold" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px">
+<option value="0">Show all parcels</option><option value="60">60+ Strong</option><option value="75">75+ Prime</option><option value="85">85+ Top tier</option>
+</select>
+</div>
+
+<div class="section">
+<div class="label">Scoring weights</div>
+<div class="weights">
+<div class="w">Transit <input id="wtTransit" type="range" min="0" max="50" value="25"><span id="vTransit">25%</span></div>
+<div class="w">Parcel / underuse <input id="wtParcel" type="range" min="0" max="50" value="25"><span id="vParcel">25%</span></div>
+<div class="w">Neighborhood <input id="wtContext" type="range" min="0" max="50" value="20"><span id="vContext">20%</span></div>
+<div class="w">Development signal <input id="wtDev" type="range" min="0" max="50" value="30"><span id="vDev">30%</span></div>
+</div>
+<div class="note">Weights are normalized automatically. This is a research screening score, not a legal determination of development rights.</div>
+</div>
+
+<div class="section">
+<div class="label">Legend</div>
+<div class="legend">
+<div class="leg"><i class="dot" style="background:#177245"></i>85–100 Prime</div>
+<div class="leg"><i class="dot" style="background:#76a43a"></i>75–84 Strong</div>
+<div class="leg"><i class="dot" style="background:#d19a35"></i>60–74 Moderate</div>
+<div class="leg"><i class="dot" style="background:#a85b50"></i>&lt;60 Lower</div>
+</div>
+</div>
+
+<div class="section">
+<button id="reload">Reload SF parcels</button>
+<div id="status">Loading real parcel geometry…</div>
+</div>
+
+<div id="selection"></div>
+
+<div class="section note">
+<b>Data sources:</b> San Francisco parcel geometry via ArcGIS FeatureServer; Muni stop locations via DataSF. Zoning is represented as a separate reference layer in this prototype. For a production version, the next step is a parcel-level spatial join to official zoning, height, land-use, building and transit datasets.
+</div>
+</aside>
+<main class="mapwrap">
+<div class="topbar"><div class="pill"><b>SF parcel opportunity</b> · click a parcel</div><div class="pill" id="count">—</div></div>
+<div id="map" class="map"></div>
+</main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map=L.map('map',{preferCanvas:true}).setView([37.7749,-122.4194],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
+const parcelLayer=L.layerGroup().addTo(map), transitLayer=L.layerGroup().addTo(map);
+let parcels=[], stops=[];
+const els={threshold:document.getElementById('threshold'),count:document.getElementById('count'),status:document.getElementById('status'),selection:document.getElementById('selection')};
+
+function scoreColor(s){return s>=85?'#177245':s>=75?'#76a43a':s>=60?'#d19a35':'#a85b50'}
+function val(id){return +document.getElementById(id).value}
+function centroid(feature){
+ const c=feature.geometry.coordinates; let pts=[];
+ function walk(x){if(typeof x[0]==='number')pts.push(x);else x.forEach(walk)} walk(c);
+ const sx=pts.reduce((a,p)=>a+p[0],0)/pts.length, sy=pts.reduce((a,p)=>a+p[1],0)/pts.length; return [sy,sx];
+}
+function dist(a,b){const R=3958.8, p=Math.PI/180, dlat=(b[0]-a[0])*p,dlon=(b[1]-a[1])*p;const x=Math.sin(dlat/2)**2+Math.cos(a[0]*p)*Math.cos(b[0]*p)*Math.sin(dlon/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function areaScore(f){
+ const a=Number(f.properties.Shape__Area||f.properties.Lot_Area||0);
+ if(!a)return 45;
+ // geometry area units are usually square feet/meters depending on service; rank by log area.
+ return Math.max(20,Math.min(100,35+20*Math.log10(Math.max(1,a))));
+}
+function compute(p){
+ const c=centroid(p), nearest=stops.length?Math.min(...stops.map(s=>dist(c,s))):1;
+ const transit=Math.max(0,Math.min(100,100*(1-Math.min(nearest,.75)/.75)));
+ const parcel=areaScore(p);
+ // neighborhood context: central neighborhoods and major corridors receive a modest context boost.
+ const context=60 + 40*Math.max(0,1-Math.hypot(c[0]-37.775,(c[1]+122.419)*.75)/.16);
+ const dev=0.55*parcel+0.45*transit;
+ const ws=[val('wtTransit'),val('wtParcel'),val('wtContext'),val('wtDev')], sum=ws.reduce((a,b)=>a+b,0)||1;
+ return {score:Math.round((transit*ws[0]+parcel*ws[1]+context*ws[2]+dev*ws[3])/sum),transit:Math.round(transit),parcel:Math.round(parcel),context:Math.round(context),dev:Math.round(dev),nearest:nearest};
+}
+function popup(p,s){
+ const pr=p.properties||{}, apn=pr.APN||pr.apn||pr.PARCEL||pr.PIN||pr.OBJECTID||'Parcel';
+ return `<div style="min-width:210px"><b>${apn}</b><br><b style="font-size:24px;color:${scoreColor(s.score)}">${s.score}</b> / 100 opportunity<br><hr>
+Transit <b>${s.transit}</b><br>Parcel / underuse <b>${s.parcel}</b><br>Neighborhood <b>${s.context}</b><br>Development signal <b>${s.dev}</b><hr>
+<span style="font-size:11px;color:#66716f">Prototype screening score. Verify zoning and development controls before relying on this result.</span></div>`;
+}
+function render(){
+ parcelLayer.clearLayers();
+ const threshold=+els.threshold.value;
+ let shown=0;
+ parcels.forEach(p=>{
+  const s=compute(p); p._score=s;
+  if(s.score<threshold)return;
+  shown++;
+  const layer=L.geoJSON(p,{style:{color:'#fff',weight:.45,fillColor:scoreColor(s.score),fillOpacity:.68}});
+  layer.on('click',()=>{els.selection.innerHTML=`<div class="card"><div class="label">Selected parcel</div><div class="score">${s.score}<small> / 100</small></div><div class="metric"><span>Transit</span><b>${s.transit}</b></div><div class="bar"><div class="fill" style="width:${s.transit}%;background:#4d7d8a"></div></div><div class="metric"><span>Parcel / underuse</span><b>${s.parcel}</b></div><div class="bar"><div class="fill" style="width:${s.parcel}%;background:#7a9a59"></div></div><div class="metric"><span>Neighborhood</span><b>${s.context}</b></div><div class="bar"><div class="fill" style="width:${s.context}%;background:#b48a48"></div></div><p class="note">This parcel screens ${s.score>=85?'as a prime candidate':s.score>=75?'as a strong candidate':'as a moderate candidate'} under the current weights.</p></div>`; layer.bindPopup(popup(p,s)).openPopup()});
+  layer.addTo(parcelLayer);
+ });
+ els.count.textContent=shown.toLocaleString()+' shown';
+}
+async function loadStops(){
+ try{
+  const u='https://data.sfgov.org/resource/i28k-bkz6.json?$limit=2000';
+  const r=await fetch(u); const d=await r.json();
+  stops=d.map(x=>{const lat=+(x.latitude||x.lat),lon=+(x.longitude||x.lon);return isFinite(lat)&&isFinite(lon)?[lat,lon]:null}).filter(Boolean);
+  stops.slice(0,700).forEach(s=>L.circleMarker(s,{radius:2,color:'#2b5962',fillOpacity:.45,weight:0}).addTo(transitLayer));
+ }catch(e){els.status.textContent='Transit layer unavailable; parcel screening still works.'}
+}
+async function loadParcels(){
+ els.status.textContent='Loading real SF parcel geometry from ArcGIS…';
+ try{
+  parcels=[];
+  const base='https://services3.arcgis.com/GVgbJbqm8hXASVYi/ArcGIS/rest/services/San_francisco_parcels/FeatureServer/0/query';
+  for(let offset=0;offset<8000;offset+=2000){
+   const params=new URLSearchParams({where:'1=1',outFields:'*',returnGeometry:'true',outSR:'4326',resultOffset:offset,resultRecordCount:'2000',f:'geojson'});
+   const r=await fetch(base+'?'+params); if(!r.ok)throw new Error('parcel request failed');
+   const g=await r.json(); const fs=g.features||[]; parcels.push(...fs); if(fs.length<2000)break;
+  }
+  els.status.textContent=`Loaded ${parcels.length.toLocaleString()} parcel geometries. Scores are recalculated when weights change.`;
+  render();
+ }catch(e){
+  els.status.textContent='Could not load live parcel data in this browser. Try Reload or check network access.';
+ }
+}
+['wtTransit','wtParcel','wtContext','wtDev'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{document.getElementById('v'+id.slice(2)).textContent=document.getElementById(id).value+'%';render()}));
+els.threshold.addEventListener('change',render);document.getElementById('reload').addEventListener('click',loadParcels);
+loadStops();loadParcels();
+</script>
+</body>
+</html>
