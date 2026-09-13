@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Every Lot Has Potential — SF Opportunity Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#17211f;background:#eef1ee}
+.app{height:100vh;display:grid;grid-template-columns:330px 1fr 350px;overflow:hidden}.side,.info{background:#fff;overflow:auto}.side{border-right:1px solid #d8dedb;padding:22px}.info{border-left:1px solid #d8dedb;padding:22px}.map{min-width:0;position:relative}.map#map{height:100vh}
+h1{font-size:24px;line-height:1.02;margin:0 0 7px;letter-spacing:-.03em}.tag{font-size:11px;color:#68736f;line-height:1.45;margin-bottom:20px}.label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:800;color:#69746f;margin:18px 0 8px}
+select,input{width:100%;border:1px solid #cfd7d3;border-radius:8px;padding:9px;background:white;color:#17211f}
+.row{display:grid;grid-template-columns:1fr 45px;gap:8px;align-items:center;margin:9px 0;font-size:12px}.row span{text-align:right;font-weight:700}.legend{display:grid;gap:7px;font-size:12px}.legend div{display:flex;align-items:center;gap:8px}.dot{width:12px;height:12px;border-radius:3px}
+.status{font-size:11px;color:#68736f;line-height:1.45;border-top:1px solid #e0e5e2;padding-top:14px;margin-top:18px}.maptitle{position:absolute;z-index:1000;top:14px;left:14px;background:rgba(255,255,255,.96);padding:10px 13px;border:1px solid #d5dcda;border-radius:10px;font-size:12px;box-shadow:0 2px 10px #0001}.maptitle b{font-size:13px}.score{font-size:52px;font-weight:850;line-height:.95;letter-spacing:-.05em}.score small{font-size:13px;color:#6c7772;letter-spacing:0}.grade{font-size:12px;font-weight:800;margin-top:5px;text-transform:uppercase;letter-spacing:.06em}.card{border:1px solid #dce2df;border-radius:11px;padding:14px;margin-top:14px}.metric{margin:11px 0}.metrichead{display:flex;justify-content:space-between;font-size:12px}.bar{height:6px;background:#e9eeeb;border-radius:8px;overflow:hidden;margin-top:5px}.fill{height:100%;border-radius:8px}.fact{display:flex;justify-content:space-between;gap:15px;font-size:12px;padding:7px 0;border-bottom:1px solid #edf0ee}.fact:last-child{border:0}.muted{color:#69746f}.small{font-size:10px;color:#69746f;line-height:1.5}.btn{border:1px solid #cfd7d3;background:#fff;border-radius:8px;padding:9px 11px;font-weight:700;cursor:pointer;width:100%}.btn:hover{background:#f4f6f4}
+@media(max-width:1000px){.app{grid-template-columns:280px 1fr}.info{position:absolute;right:10px;top:70px;width:320px;max-height:70vh;z-index:1200;border:1px solid #d8dedb;border-radius:12px;box-shadow:0 5px 25px #0002}.map#map{height:100vh}}@media(max-width:650px){.app{grid-template-columns:1fr}.side{display:none}.info{left:10px;right:10px;width:auto}.map#map{height:100vh}}
+</style>
+</head>
+<body>
+<div class="app">
+<aside class="side">
+<h1>EVERY LOT<br>HAS POTENTIAL</h1>
+<div class="tag">San Francisco parcel opportunity map — a research screening tool using live public GIS sources.</div>
+
+<div class="label">Show</div>
+<select id="threshold"><option value="0">All parcels</option><option value="60">60+ Moderate+</option><option value="75">75+ Strong+</option><option value="85">85+ Prime</option></select>
+
+<div class="label">Opportunity model</div>
+<div class="row">Transit <input id="wTransit" type="range" min="0" max="50" value="25"><span id="vwTransit">25</span></div>
+<div class="row">Zoning <input id="wZoning" type="range" min="0" max="50" value="25"><span id="vwZoning">25</span></div>
+<div class="row">Underuse <input id="wUnder" type="range" min="0" max="50" value="20"><span id="vwUnder">20</span></div>
+<div class="row">Height / density <input id="wHeight" type="range" min="0" max="50" value="30"><span id="vwHeight">30</span></div>
+<div class="small">Weights are normalized. Scores indicate development opportunity, not guaranteed development rights.</div>
+
+<div class="label">Score</div>
+<div class="legend">
+<div><i class="dot" style="background:#167447"></i>85–100 Prime</div>
+<div><i class="dot" style="background:#79a73c"></i>75–84 Strong</div>
+<div><i class="dot" style="background:#d49b35"></i>60–74 Moderate</div>
+<div><i class="dot" style="background:#ad5e51"></i>&lt;60 Lower</div>
+</div>
+
+<div class="label">Layers used</div>
+<div class="small">
+<b>Parcel geometry:</b> SF Planning current parcel GIS.<br>
+<b>Zoning:</b> official SF Planning Zoning Districts.<br>
+<b>Height:</b> official SF Planning Height Districts.<br>
+<b>Transit:</b> current DataSF Muni Stops + SF Planning SB79 parcel layer.<br>
+<b>Building / land-use:</b> DataSF assessor property attributes, where available.
+</div>
+
+<button class="btn" id="reload" style="margin-top:16px">Reload current map</button>
+<div class="status" id="status">Move or zoom the map to load parcels.</div>
+</aside>
+
+<main class="map" id="map">
+<div class="maptitle"><b>SF Opportunity Map</b><br><span id="count">Loading parcel screen…</span></div>
+</main>
+
+<aside class="info" id="info">
+<div class="label" style="margin-top:0">Selected parcel</div>
+<div class="muted" style="font-size:13px">Click any colored parcel on the map.</div>
+<div class="card"><div class="small">The map performs a live spatial join between SF parcel geometry and official zoning/height layers for the visible map area.</div></div>
+</aside>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js"></script>
+<script>
+const map=L.map('map',{preferCanvas:true,minZoom:12,maxZoom:19}).setView([37.7749,-122.4194],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap contributors'}).addTo(map);
+const parcelLayer=L.layerGroup().addTo(map), transitLayer=L.layerGroup().addTo(map), zoningLayer=L.layerGroup().addTo(map);
+const status=document.getElementById('status'),count=document.getElementById('count'),info=document.getElementById('info');
+let muniStops=[],sb79=[],assessorRecords=[],current=[],timer=null,assessorYear=null;
+
+const URLS={
+ parcels:'https://sfplanninggis.org/arcgiswa/rest/services/PlanningData/MapServer/23/query',
+ zoning:'https://sfplanninggis.org/arcgiswa/rest/services/PlanningData/MapServer/3/query',
+ height:'https://sfplanninggis.org/arcgiswa/rest/services/PlanningData/MapServer/5/query',
+ sb79:'https://sfplanninggis.org/arcgiswa/rest/services/PlanningData/MapServer/143/query',
+ muni:'https://data.sfgov.org/resource/i28k-bkz6.json?$limit=3000',
+ assessor:'https://data.sfgov.org/resource/wv5m-vpq2.json'
+};
+function color(s){return s>=85?'#167447':s>=75?'#79a73c':s>=60?'#d49b35':'#ad5e51'}
+function weights(){let a=[+wTransit.value,+wZoning.value,+wUnder.value,+wHeight.value],t=a.reduce((x,y)=>x+y,0)||1;return a.map(x=>x/t)}
+function nearestDist(lat,lon){if(!muniStops.length)return 0.5;let best=9;for(const p of muniStops){const d=turf.distance([lon,lat],[p.lon,p.lat],{units:'miles'});if(d<best)best=d}return best}
+function polygonValue(pt,features,field){for(const f of features){try{if(turf.booleanPointInPolygon(pt,f))return f.properties?.[field]}catch(e){}}return null}
+function numericHeight(v){if(v==null)return 0;let m=String(v).match(/[0-9]+/);return m?+m[0]:0}
+function areaOf(f){try{return turf.area(f)*10.7639}catch(e){return 0}}
+function scoreParcel(f,z,h){
+ const c=turf.centroid(f), [lon,lat]=c.geometry.coordinates;
+ const zoning=z?.zoning||'';
+ const height=numericHeight(h?.gen_hght||h?.HEIGHT);
+ const lotGeom=areaOf(f);
+ const id=f.properties?.mapblklot||f.properties?.MAPBLKLOT||f.properties?.mapblklot_1||'';
+ const a=assessorRecords.find(r=>String(r.parcel_number||'')===String(id));
+ const lot=Number(a?.lot_area)||lotGeom;
+ const propArea=Number(a?.property_area)||0;
+ const stories=Number(a?.number_of_stories)||0;
+ const units=Number(a?.number_of_units)||0;
+ const td=nearestDist(lat,lon);
+ const transit=Math.max(0,Math.min(100,100*(1-Math.min(td,.5)/.5)));
+ const heightScore=Math.max(15,Math.min(100,(height/150)*100));
+ const intensity=propArea>0&&lot>0?Math.min(100,(1-Math.min(propArea/Math.max(1,lot*3),1))*100):Math.max(35,Math.min(100,65-stories*6));
+ const zoneBoost=/^(NCT|NC-|RTO|MUR|MUO|CMU|UMU|RC-|C-|RED|WMU|MUG|PDR)/i.test(zoning)?88:/^(RM-|RH-|RSD)/i.test(zoning)?68:/^(P|OS)/i.test(zoning)?25:50;
+ const sb=sb79.some(x=>{try{return turf.booleanPointInPolygon(c,x)}catch(e){return false}});
+ const transitAdjusted=Math.min(100,transit+(sb?12:0));
+ const [wt,wz,wu,wh]=weights();
+ const total=Math.round(transitAdjusted*wt+zoneBoost*wz+intensity*wu+heightScore*wh);
+ return {score:Math.max(0,Math.min(100,total)),transit:Math.round(transitAdjusted),zoning:Math.round(zoneBoost),under:Math.round(intensity),height:Math.round(heightScore),zone:zoning||'Not returned',heightRaw:height||'—',lot:Math.round(lot),propArea:Math.round(propArea),stories,units,use:a?.use_definition||a?.property_class_code_definition||'—',year:a?.year_property_built||'—',sb,assessor:!!a};
+}
+async function query(url,params){
+ const q=new URLSearchParams(params);const r=await fetch(url+'?'+q);if(!r.ok)throw new Error(url+' '+r.status);return r.json();
+}
+async function loadReferenceData(bounds){
+ const env=`${bounds.getWest()},${bounds.getSouth()},${bounds.getEast()},${bounds.getNorth()}`;
+ const base={geometry:env,geometryType:'esriGeometryEnvelope',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:'*',returnGeometry:'true',outSR:'4326',f:'geojson',resultRecordCount:'2000'};
+ const [z,h,s]=await Promise.all([
+  query(URLS.zoning,{...base,outFields:'zoning_sim,districtname'}),
+  query(URLS.height,{...base,outFields:'HEIGHT,gen_hght'}),
+  query(URLS.sb79,{...base,outFields:'*'})
+ ]);
+ return {z:z.features||[],h:h.features||[],s:s.features||[]};
+}
+function showInfo(f,s){
+ const p=f.properties||{};const id=p.mapblklot||p.MAPBLKLOT||p.mapblklot_1||p.OBJECTID||'Parcel';
+ const grade=s.score>=85?'Prime development opportunity':s.score>=75?'Strong opportunity':s.score>=60?'Moderate opportunity':'Lower opportunity';
+ info.innerHTML=`<div class="label" style="margin-top:0">Selected parcel</div><div class="muted" style="font-size:12px">${id}</div>
+ <div class="card"><div class="score" style="color:${color(s.score)}">${s.score}<small> / 100</small></div><div class="grade" style="color:${color(s.score)}">${grade}</div></div>
+ <div class="card">
+ ${metric('Transit access',s.transit)}${metric('Zoning opportunity',s.zoning)}${metric('Underuse / parcel',s.under)}${metric('Height / density',s.height)}
+ </div>
+ <div class="card">
+ <div class="fact"><span class="muted">Zoning</span><b>${s.zone}</b></div>
+ <div class="fact"><span class="muted">Height district</span><b>${s.heightRaw}${s.heightRaw!=='—'?' ft':''}</b></div>
+ <div class="fact"><span class="muted">Lot area</span><b>${s.lot.toLocaleString()} sf</b></div>
+ <div class="fact"><span class="muted">Building area</span><b>${s.propArea?s.propArea.toLocaleString()+' sf':'—'}</b></div>
+ <div class="fact"><span class="muted">Stories / units</span><b>${s.stories||'—'} / ${s.units||'—'}</b></div>
+ <div class="fact"><span class="muted">Current assessor use</span><b>${s.use}</b></div>
+ <div class="fact"><span class="muted">Year built</span><b>${s.year}</b></div>
+ <div class="fact"><span class="muted">SB 79 context</span><b>${s.sb?'Potentially affected':'Not flagged'}</b></div>
+ </div>
+ <div class="card small"><b>Interpretation</b><br>This is a screening score built from live parcel, zoning, height and transit geography. It should be verified against the SF Property Information Map and Planning Code before making a development claim.</div>`;
+}
+function metric(name,v){return `<div class="metric"><div class="metrichead"><span>${name}</span><b>${v}</b></div><div class="bar"><div class="fill" style="width:${v}%;background:${color(v)}"></div></div></div>`}
+async function loadAssessor(bounds){
+ try{
+  if(!assessorYear){
+   const y=await (await fetch(URLS.assessor+'?$select=max(closed_roll_year)%20as%20max_year')).json();
+   assessorYear=Number(y[0]?.max_year)||2024;
+  }
+  const q=`$select=parcel_number,use_definition,property_class_code_definition,year_property_built,number_of_stories,number_of_units,property_area,lot_area,analysis_neighborhood,zoning_code&$where=closed_roll_year=${assessorYear}%20AND%20within_box(the_geom,${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()})&$limit=5000`;
+  const d=await (await fetch(URLS.assessor+'?'+q.replaceAll(' ','%20'))).json();
+  assessorRecords=Array.isArray(d)?d:[];
+ }catch(e){assessorRecords=[];console.warn('Assessor data unavailable',e)}
+}
+async function render(){
+ if(map.getZoom()<13){status.textContent='Zoom in to level 13+ to load parcel-level analysis.';count.textContent='Zoom in for parcels';return}
+ parcelLayer.clearLayers();current=[];
+ status.textContent='Loading official SF parcel + zoning + height layers…';
+ try{
+  const b=map.getBounds(),env=`${b.getWest()},${b.getSouth()},${b.getEast()},${b.getNorth()}`;
+  const [ref,p] = await Promise.all([
+   loadReferenceData(b),
+   query(URLS.parcels,{geometry:env,geometryType:'esriGeometryEnvelope',inSR:'4326',spatialRel:'esriSpatialRelIntersects',outFields:'*',returnGeometry:'true',outSR:'4326',f:'geojson',resultRecordCount:'2000'}),
+   loadAssessor(b)
+  ]);
+  sb79=ref.s;const fs=p.features||[];let shown=0;
+  fs.forEach(f=>{
+   const c=turf.centroid(f);
+   const zf=ref.z.find(x=>{try{return turf.booleanPointInPolygon(c,x)}catch(e){return false}});
+   const hf=ref.h.find(x=>{try{return turf.booleanPointInPolygon(c,x)}catch(e){return false}});
+   const z={zoning:zf?.properties?.zoning_sim||zf?.properties?.districtname};
+   const h={gen_hght:hf?.properties?.gen_hght,HEIGHT:hf?.properties?.HEIGHT};
+   const s=scoreParcel(f,z,h);f._score=s;
+   if(s.score<+threshold.value)return;
+   shown++;
+   const layer=L.geoJSON(f,{style:{color:'#ffffff',weight:.45,fillColor:color(s.score),fillOpacity:.70}});
+   layer.on('click',()=>{showInfo(f,s);layer.setStyle({weight:2,color:'#111',fillOpacity:.85})});
+   layer.addTo(parcelLayer);current.push(f);
+  });
+  count.textContent=shown.toLocaleString()+' parcels shown';
+  status.textContent=`Live spatial join complete: ${fs.length.toLocaleString()} parcels + zoning + height + transit + assessor building/use data.`;
+ }catch(e){console.error(e);status.textContent='Data request failed. Try Reload or zoom in.'}
+}
+async function loadMuni(){
+ try{
+  const d=await (await fetch(URLS.muni)).json();
+  muniStops=d.map(x=>({lat:+(x.latitude||x.lat),lon:+(x.longitude||x.lon)})).filter(x=>isFinite(x.lat)&&isFinite(x.lon));
+  muniStops.forEach(p=>L.circleMarker([p.lat,p.lon],{radius:2,color:'#355f6c',fillOpacity:.55,weight:0}).addTo(transitLayer));
+ }catch(e){console.warn('Muni stops unavailable',e)}
+}
+['wTransit','wZoning','wUnder','wHeight'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{document.getElementById('vw'+id.slice(1)).textContent=document.getElementById(id).value;render()}));
+threshold.addEventListener('change',render);reload.addEventListener('click',render);
+map.on('moveend',()=>{clearTimeout(timer);timer=setTimeout(render,450)});
+loadMuni().then(render);
+</script>
+</body></html>
